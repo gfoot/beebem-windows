@@ -60,6 +60,11 @@ Boston, MA  02110-1301, USA.
 #include "teletext.h"
 #include "music5000.h"
 
+/* SuperShadow prototyping */
+unsigned char SuperShadowRam[65536];
+bool SuperShadowRead;
+bool SuperShadowWrite;
+
 unsigned char WholeRam[65536];
 unsigned char Roms[16][16384];
 
@@ -284,6 +289,11 @@ const unsigned char *BeebMemPtrWithWrapMode7(int Address, int Length) {
 /*----------------------------------------------------------------------------*/
 unsigned char BeebReadMem(int Address) {
 	unsigned char Value = 0xff;
+
+	if (SuperShadowRead && (Address >> 8 != 0x01))
+	{
+		return SuperShadowRam[Address];
+	}
 
 	if (MachineType == Model::B) {
 		if (Address >= 0x8000 && Address < 0xc000) return Roms[ROMSEL][Address - 0x8000];
@@ -620,6 +630,26 @@ void DebugMemoryState()
 				(ACCCON & 0x01) != 0 ? "on" : "off");
 			break;
 	}
+
+	DebugDisplayInfoF("SuperShadow: R:%d W:%d", SuperShadowRead ? 1 : 0, SuperShadowWrite ? 1 : 0);
+	for (int addr = 0; addr < 0x200; addr += 16)
+	{
+		char s[1024] = "";
+		for (int offset = 0; offset < 16; ++offset)
+		{
+			sprintf(strchr(s, 0), "%02x ", SuperShadowRam[addr + offset]);
+		}
+		DebugDisplayInfoF(" %04x: %s", addr, s);
+	}
+	for (int addr = 0xf800; addr < 0x10000; addr += 16)
+	{
+		char s[1024] = "";
+		for (int offset = 0; offset < 16; ++offset)
+		{
+			sprintf(strchr(s, 0), "%02x ", SuperShadowRam[addr + offset]);
+		}
+		DebugDisplayInfoF(" %04x: %s", addr, s);
+	}
 }
 
 /*----------------------------------------------------------------------------*/
@@ -682,6 +712,13 @@ static void RomWriteThrough(int Address, unsigned char Value) {
 /*----------------------------------------------------------------------------*/
 void BeebWriteMem(int Address, unsigned char Value) {
 /*  fprintf(stderr,"Write %x to 0x%x\n",Value,Address); */
+
+	if (SuperShadowWrite && (Address >> 8 != 0x01))
+	{
+		SuperShadowRam[Address] = Value;
+		return;
+	}
+
 
 	if (MachineType == Model::B) {
 		if (Address < 0x8000) {
@@ -1279,6 +1316,9 @@ void BeebMemInit(bool LoadRoms, bool SkipIntegraBConfig) {
   memset(ShadowRam,0,0x5000);
   MemSel = PrvEn = ShEn = Prvs1 = Prvs4 = Prvs8 = false;
   HidAdd = 0;
+
+  memset(SuperShadowRam, 0, 0x8000);
+  SuperShadowRead = SuperShadowWrite = false;
 
   if (!SkipIntegraBConfig)
   {

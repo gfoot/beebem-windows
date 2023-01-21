@@ -30,6 +30,9 @@ Boston, MA  02110-1301, USA.
 #include <stdio.h>
 #include <stdlib.h>
 
+extern bool SuperShadowRead;
+extern bool SuperShadowWrite;
+
 typedef char ROMConfigFile[4][17][_MAX_PATH];
 static const char *BANK_EMPTY = "EMPTY";
 static const char *BANK_RAM = "RAM";
@@ -96,7 +99,7 @@ extern char HardDrivePath[_MAX_PATH]; // JGH
 
 unsigned char BeebReadMem(int Address);
 void BeebWriteMem(int Address, unsigned char Value);
-#define BEEBWRITEMEM_DIRECT(Address, Value) WholeRam[Address] = Value
+#define BEEBWRITEMEM_DIRECT(Address, Value) BeebWriteMem(Address, Value) //WholeRam[Address] = Value
 const unsigned char *BeebMemPtrWithWrap(int Address, int Length);
 const unsigned char *BeebMemPtrWithWrapMode7(int Address, int Length);
 bool ReadROMFile(const char *filename, ROMConfigFile RomConfig);
