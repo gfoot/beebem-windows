@@ -61,9 +61,11 @@ Boston, MA  02110-1301, USA.
 #include "music5000.h"
 
 /* SuperShadow prototyping */
+int SuperShadowVersion = 2;
 unsigned char SuperShadowRam[65536];
 bool SuperShadowRead;
 bool SuperShadowWrite;
+uint16_t SuperShadowTransferAddress;
 
 unsigned char WholeRam[65536];
 unsigned char Roms[16][16384];
@@ -289,6 +291,16 @@ const unsigned char *BeebMemPtrWithWrapMode7(int Address, int Length) {
 /*----------------------------------------------------------------------------*/
 unsigned char BeebReadMem(int Address) {
 	unsigned char Value = 0xff;
+
+	/* SuperShadow v2 Tube interface */
+	if (SuperShadowVersion == 2 && (Address & 0xffe1) == 0xfee1) {
+		if (Address == 0xfee5) {
+			return SuperShadowRam[SuperShadowTransferAddress++];
+		}
+		else {
+			return SuperShadowRam[Address]; /* Shadow RAM gets activated for all these addresses, even ones that aren't decoded */
+		}
+	}
 
 	if (SuperShadowRead && (Address >> 8 != 0x01))
 	{
@@ -713,12 +725,24 @@ static void RomWriteThrough(int Address, unsigned char Value) {
 void BeebWriteMem(int Address, unsigned char Value) {
 /*  fprintf(stderr,"Write %x to 0x%x\n",Value,Address); */
 
-	if (SuperShadowWrite && (Address >> 8 != 0x01))
-	{
-		SuperShadowRam[Address] = Value;
+	/* Implement SuperShadow v2 Tube interface */
+	if (SuperShadowVersion == 2 && (Address & 0xffe1) == 0xfee1) {
+		if (Address == 0xfee5) {
+			SuperShadowRam[SuperShadowTransferAddress++] = Value;
+			return;
+		}
+		else if (Address == 0xfeed) {
+			SuperShadowTransferAddress = (SuperShadowTransferAddress << 8) + Value;
+			/* fall through */
+		}
+		SuperShadowRam[Address] = Value; /* Shadow RAM gets activated for all these addresses, even ones that aren't decoded */
 		return;
 	}
 
+	if (SuperShadowWrite && (Address >> 8 != 0x01))	{
+		SuperShadowRam[Address] = Value;
+		return;
+	}
 
 	if (MachineType == Model::B) {
 		if (Address < 0x8000) {
