@@ -1393,7 +1393,7 @@ void Exec6502Instruction(void) {
 		}
 
 		// SuperShadow: Maybe switch shadow mode depending on instruction's address (before the fetch and increment)
-		if (ProgramCounter < 0x100) {
+		if (ProgramCounter < 0x100 && SuperShadowLockMode == 0) {
 			SuperShadowRead = (ProgramCounter & 0x80) > 0;
 			if (SuperShadowVersion == 1) {
 				SuperShadowWrite = (ProgramCounter & 0x40) > 0;

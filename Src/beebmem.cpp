@@ -61,11 +61,12 @@ Boston, MA  02110-1301, USA.
 #include "music5000.h"
 
 /* SuperShadow prototyping */
-int SuperShadowVersion = 2;
+int SuperShadowVersion = 3;
 unsigned char SuperShadowRam[65536];
 bool SuperShadowRead;
 bool SuperShadowWrite;
 uint16_t SuperShadowTransferAddress;
+int SuperShadowLockMode = 0;
 
 unsigned char WholeRam[65536];
 unsigned char Roms[16][16384];
@@ -288,6 +289,56 @@ const unsigned char *BeebMemPtrWithWrapMode7(int Address, int Length) {
 	return tmpBuf;
 }
 
+bool SuperShadowRemapAddress(bool RWB, int *Address) {
+
+	if (SuperShadowVersion == 3 && !RWB) {
+		/* Process lock/unlock sequences 
+		 *
+		 * From mode 0 (unlocked) a write to &Exxx in non-shadow mode transitions to mode 2 (locked)
+		 *
+		 * From mode 2, subsequent writes must be &Dxxx, &Exxx, &Cxxx to transition to mode 3, mode 1, then mode 0
+		 * 
+		 * From modes 3 and 1, incorrect writes transition back to mode 2
+		 */
+		int addrtop = *Address >> 12;
+		switch (SuperShadowLockMode) {
+		case 0:
+			if (!SuperShadowRead && addrtop == 0xE)
+				SuperShadowLockMode = 2;
+			break;
+		case 1:
+			if (addrtop == 0xC)
+				SuperShadowLockMode = 0;
+			else
+				SuperShadowLockMode = 2;
+			break;
+		case 3:
+			if (addrtop == 0xE)
+				SuperShadowLockMode = 1;
+			else
+				SuperShadowLockMode = 2;
+			break;
+		case 2:
+			if (addrtop == 0xD)
+				SuperShadowLockMode = 3;
+			break;
+		}
+	}
+
+	int Page = *Address >> 8;
+
+	// Technically the stack comes from Shadow RAM but BeebEm's 6502core doesn't allow that at the moment, so it's set to main RAM here
+	if ((RWB && SuperShadowRead || !RWB && SuperShadowWrite) && (Page != 0x01)) {
+		if (SuperShadowVersion == 3 && (Page == 0x03 || (*Address >= 0x00c0 && *Address <= 0x00ff))) {
+			/* In V3 (=V1 with PLD code 1x), Shadow pages 0 and 3 are redirected to pages 4 and 7 of normal RAM */
+			*Address += 0x0400;
+			return false;
+		}
+		return true;
+	}
+	return false;
+}
+
 /*----------------------------------------------------------------------------*/
 unsigned char BeebReadMem(int Address) {
 	unsigned char Value = 0xff;
@@ -302,7 +353,7 @@ unsigned char BeebReadMem(int Address) {
 		}
 	}
 
-	if (SuperShadowRead && (Address >> 8 != 0x01))
+	if (SuperShadowRemapAddress(true, &Address))
 	{
 		return SuperShadowRam[Address];
 	}
@@ -732,16 +783,27 @@ void BeebWriteMem(int Address, unsigned char Value) {
 			return;
 		}
 		else if (Address == 0xfeed) {
-			SuperShadowTransferAddress = (SuperShadowTransferAddress << 8) + Value;
+			/* OK so I messed up the wiring in the circuit in the V2 iss1 board.  This emulates that, so I can see if I can work around it in software. */
+			//SuperShadowTransferAddress = (SuperShadowTransferAddress << 8) + Value;
+
+			SuperShadowTransferAddress = ((SuperShadowTransferAddress & 0x0ff0) << 4) + Value;
+
 			/* fall through */
 		}
 		SuperShadowRam[Address] = Value; /* Shadow RAM gets activated for all these addresses, even ones that aren't decoded */
 		return;
 	}
 
-	if (SuperShadowWrite && (Address >> 8 != 0x01))	{
+	if (SuperShadowRemapAddress(false, &Address))
+	{
 		SuperShadowRam[Address] = Value;
 		return;
+	}
+
+	// In V3 (V1 + PLD 1x) writes to high addresses also write through to shadow RAM
+	if (SuperShadowVersion == 3 && Address >= 0xf800)
+	{
+		SuperShadowRam[Address] = Value;
 	}
 
 	if (MachineType == Model::B) {

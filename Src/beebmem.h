@@ -33,6 +33,7 @@ Boston, MA  02110-1301, USA.
 extern bool SuperShadowRead;
 extern bool SuperShadowWrite;
 extern int SuperShadowVersion;
+extern int SuperShadowLockMode;
 
 typedef char ROMConfigFile[4][17][_MAX_PATH];
 static const char *BANK_EMPTY = "EMPTY";
