@@ -61,7 +61,7 @@ Boston, MA  02110-1301, USA.
 #include "music5000.h"
 
 /* SuperShadow prototyping */
-int SuperShadowVersion = 3;
+int SuperShadowVersion = 2;
 unsigned char SuperShadowRam[65536];
 bool SuperShadowRead;
 bool SuperShadowWrite;
@@ -783,10 +783,7 @@ void BeebWriteMem(int Address, unsigned char Value) {
 			return;
 		}
 		else if (Address == 0xfeed) {
-			/* OK so I messed up the wiring in the circuit in the V2 iss1 board.  This emulates that, so I can see if I can work around it in software. */
-			//SuperShadowTransferAddress = (SuperShadowTransferAddress << 8) + Value;
-
-			SuperShadowTransferAddress = ((SuperShadowTransferAddress & 0x0ff0) << 4) + Value;
+			SuperShadowTransferAddress = (SuperShadowTransferAddress << 8) + Value;
 
 			/* fall through */
 		}
