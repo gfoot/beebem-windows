@@ -62,6 +62,12 @@ Boston, MA  02110-1301, USA.
 
 /* SuperShadow prototyping */
 int SuperShadowVersion = 2;
+bool SuperShadowV2Issue1 = true;
+
+bool SuperShadowEnableLocking; /* Writes to OS ROM area control locked state of shadow system */
+bool SuperShadowEnableTransfers; /* Tube-style FEE5 data transfer API supported by hardware */
+bool SuperShadowEnableAliasing; /* Hardware aliases various regions of normal and shadow memory together */
+
 unsigned char SuperShadowRam[65536];
 bool SuperShadowRead;
 bool SuperShadowWrite;
@@ -291,7 +297,7 @@ const unsigned char *BeebMemPtrWithWrapMode7(int Address, int Length) {
 
 bool SuperShadowRemapAddress(bool RWB, int *Address) {
 
-	if (SuperShadowVersion == 3 && !RWB) {
+	if (SuperShadowEnableLocking && !RWB) {
 		/* Process lock/unlock sequences 
 		 *
 		 * From mode 0 (unlocked) a write to &Exxx in non-shadow mode transitions to mode 2 (locked)
@@ -329,7 +335,7 @@ bool SuperShadowRemapAddress(bool RWB, int *Address) {
 
 	// Technically the stack comes from Shadow RAM but BeebEm's 6502core doesn't allow that at the moment, so it's set to main RAM here
 	if ((RWB && SuperShadowRead || !RWB && SuperShadowWrite) && (Page != 0x01)) {
-		if (SuperShadowVersion == 3 && (Page == 0x03 || (*Address >= 0x00c0 && *Address <= 0x00ff))) {
+		if (SuperShadowEnableAliasing && (Page == 0x03 || (*Address >= 0x00c0 && *Address <= 0x00ff))) {
 			/* In V3 (=V1 with PLD code 1x), Shadow pages 0 and 3 are redirected to pages 4 and 7 of normal RAM */
 			*Address += 0x0400;
 			return false;
@@ -344,13 +350,16 @@ unsigned char BeebReadMem(int Address) {
 	unsigned char Value = 0xff;
 
 	/* SuperShadow v2 Tube interface */
-	if (SuperShadowVersion == 2 && (Address & 0xffe1) == 0xfee1) {
+	if (SuperShadowEnableTransfers && (Address & 0xffe1) == 0xfee1) {
 		if (Address == 0xfee5) {
 			return SuperShadowRam[SuperShadowTransferAddress++];
 		}
-		else {
-			return SuperShadowRam[Address]; /* Shadow RAM gets activated for all these addresses, even ones that aren't decoded */
+		else if (Address == 0xfeed) {
+			/* Reads at &FEED corrupt the transfer register */
+			SuperShadowTransferAddress = (SuperShadowTransferAddress << 8) + 0xfe; // may be unpredictable in practice
 		}
+
+		return SuperShadowRam[Address]; /* Shadow RAM gets activated for all these addresses, even ones that aren't decoded */
 	}
 
 	if (SuperShadowRemapAddress(true, &Address))
@@ -777,13 +786,19 @@ void BeebWriteMem(int Address, unsigned char Value) {
 /*  fprintf(stderr,"Write %x to 0x%x\n",Value,Address); */
 
 	/* Implement SuperShadow v2 Tube interface */
-	if (SuperShadowVersion == 2 && (Address & 0xffe1) == 0xfee1) {
+	if (SuperShadowEnableTransfers && (Address & 0xffe1) == 0xfee1) {
 		if (Address == 0xfee5) {
 			SuperShadowRam[SuperShadowTransferAddress++] = Value;
 			return;
 		}
 		else if (Address == 0xfeed) {
-			SuperShadowTransferAddress = (SuperShadowTransferAddress << 8) + Value;
+			if (SuperShadowVersion == 2 && SuperShadowV2Issue1) {
+				/* V2 Issue 1 had a hardware bug, only shifting by 4 bits instead of 8 */
+				SuperShadowTransferAddress = ((SuperShadowTransferAddress << 4) & 0xff00) + Value;
+			}
+			else {
+				SuperShadowTransferAddress = (SuperShadowTransferAddress << 8) + Value;
+			}
 
 			/* fall through */
 		}
@@ -798,7 +813,7 @@ void BeebWriteMem(int Address, unsigned char Value) {
 	}
 
 	// In V3 (V1 + PLD 1x) writes to high addresses also write through to shadow RAM
-	if (SuperShadowVersion == 3 && Address >= 0xf800)
+	if (SuperShadowEnableAliasing && Address >= 0xf800)
 	{
 		SuperShadowRam[Address] = Value;
 	}
@@ -1402,6 +1417,25 @@ void BeebMemInit(bool LoadRoms, bool SkipIntegraBConfig) {
 
   memset(SuperShadowRam, 0, 0x8000);
   SuperShadowRead = SuperShadowWrite = false;
+
+  SuperShadowEnableLocking = false;
+  SuperShadowEnableTransfers = false;
+  SuperShadowEnableAliasing = false;
+
+  switch (SuperShadowVersion)
+  {
+  case 2:
+	  SuperShadowEnableTransfers = true;
+	  break;
+  case 3:
+	  SuperShadowEnableLocking = true;
+	  SuperShadowEnableAliasing = true;
+	  break;
+  case 4:
+	  SuperShadowEnableLocking = true;
+	  SuperShadowEnableTransfers = true;
+	  break;
+  }
 
   if (!SkipIntegraBConfig)
   {
