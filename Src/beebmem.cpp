@@ -62,7 +62,7 @@ Boston, MA  02110-1301, USA.
 
 /* SuperShadow prototyping */
 int SuperShadowVersion = 2;
-bool SuperShadowV2Issue1 = true;
+bool SuperShadowV2Issue1 = false;
 
 bool SuperShadowEnableLocking; /* Writes to OS ROM area control locked state of shadow system */
 bool SuperShadowEnableTransfers; /* Tube-style FEE5 data transfer API supported by hardware */
@@ -1417,6 +1417,7 @@ void BeebMemInit(bool LoadRoms, bool SkipIntegraBConfig) {
 
   memset(SuperShadowRam, 0, 0x8000);
   SuperShadowRead = SuperShadowWrite = false;
+  SuperShadowLockMode = 0;
 
   SuperShadowEnableLocking = false;
   SuperShadowEnableTransfers = false;
